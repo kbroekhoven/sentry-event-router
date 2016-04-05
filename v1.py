@@ -473,6 +473,9 @@ class IPlugin(local, PluggableViewMixin):
 
     def get_url_module(self):
         """Allows a plugin to return the import path to a URL module."""
+         
+    def dispatch(self, project, helper, request):
+        """Early stage preprocessing of events"""
 
 
 class Plugin(IPlugin):
