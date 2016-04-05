@@ -30,6 +30,7 @@ from sentry.utils.http import (
 )
 from sentry.utils.safe import safe_execute
 from sentry.web.helpers import render_to_response
+from sentry.plugins import plugins
 
 logger = logging.getLogger('sentry')
 
@@ -58,6 +59,7 @@ def api(func):
 
 class APIView(BaseView):
     helper_cls = ClientApiHelper
+    original_project = None
 
     def _get_project_from_id(self, project_id):
         if not project_id:
@@ -88,7 +90,20 @@ class APIView(BaseView):
             project_id=project_id,
             ip_address=request.META['REMOTE_ADDR'],
         )
+        
         origin = None
+        project = self._get_project_from_id(str(project_id))
+        id_change = False
+
+        for plugin in plugins.for_project(project):
+            plugin.dispatch(project, helper, request)
+            if helper.context.project_id != project_id:
+                if id_change:
+                    logger.warn("WARNING: changing project more than once")
+                else:
+                    self.original_project = project_id
+                project_id = helper.context.project_id
+                id_change = True
 
         try:
             origin = helper.origin_from_request(request)
@@ -186,7 +201,10 @@ class APIView(BaseView):
                     raise APIError('Unable to identify project')
                 project = project_
                 helper.context.bind_project(project)
-            elif project_ != project:
+            elif self.original_project and project_ != \
+                    self._get_project_from_id(self.original_project):
+                raise APIError('Two different project were specified')
+            elif project_ != project and not self.original_project:
                 raise APIError('Two different project were specified')
 
             helper.context.bind_auth(auth)
